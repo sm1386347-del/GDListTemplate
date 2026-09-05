@@ -6,7 +6,7 @@ import { round, score } from './score.js';
 const dir = 'data';
 
 export async function fetchList() {
- const listResult = await fetch(`${dir}/_list.json`);
+    const listResult = await fetch(`${dir}/_list.json`);
     try {
         const list = await listResult.json();
         return await Promise.all(
@@ -31,14 +31,13 @@ export async function fetchList() {
             }),
         );
     } catch {
-        console.error(`Failed to load list.`);
         return null;
     }
 }
 
 export async function fetchEditors() {
+    const editorsResults = await fetch(`${dir}/_editors.json`);
     try {
-        const editorsResults = await fetch(`${dir}/_editors.json`);
         const editors = await editorsResults.json();
         return editors;
     } catch {
@@ -48,77 +47,56 @@ export async function fetchEditors() {
 
 export async function fetchLeaderboard() {
     const list = await fetchList();
+    const editors = await fetchEditors();
+    if (!list || !editors) {
+        return null;
+    }
 
     const scoreMap = {};
     const errs = [];
-    list.forEach(([level, err], rank) => {
+
+    list.forEach((res, rank) => {
+        if (!res) {
+            return;
+        }
+        const [level, err] = res;
         if (err) {
             errs.push(err);
             return;
         }
 
-        // Verification
-        const verifier = Object.keys(scoreMap).find(
-            (u) => u.toLowerCase() === level.verifier.toLowerCase(),
-        ) || level.verifier;
-        scoreMap[verifier] ??= {
-            verified: [],
-            completed: [],
-            progressed: [],
-        };
-        const { verified } = scoreMap[verifier];
-        verified.push({
-            rank: rank + 1,
-            level: level.name,
-            score: score(rank + 1, 100, level.percentToQualify),
-            link: level.verification,
-        });
+        const count = level.records.length;
+        const total = level.list;
 
-        // Records
         level.records.forEach((record) => {
-            const user = Object.keys(scoreMap).find(
-                (u) => u.toLowerCase() === record.user.toLowerCase(),
-            ) || record.user;
-            scoreMap[user] ??= {
-                verified: [],
-                completed: [],
-                progressed: [],
+            const user = record.user;
+            scoreMap[user] = scoreMap[user] || {
+                score: 0,
+                records: [],
             };
-            const { completed, progressed } = scoreMap[user];
-            if (record.percent === 100) {
-                completed.push({
-                    rank: rank + 1,
-                    level: level.name,
-                    score: score(rank + 1, 100, level.percentToQualify),
-                    link: record.link,
-                });
-                return;
-            }
 
-            progressed.push({
+            scoreMap[user].records.push({
                 rank: rank + 1,
                 level: level.name,
-                percent: record.percent,
-                score: score(rank + 1, record.percent, level.percentToQualify),
+                score: score(rank + 1, record.percent, level.percent),
                 link: record.link,
             });
         });
     });
 
-    // Wrap in extra Object containing the user and total score
-    const res = Object.entries(scoreMap).map(([user, scores]) => {
-        const { verified, completed, progressed } = scores;
-        const total = [verified, completed, progressed]
-            .flat()
-            .reduce((prev, cur) => prev + cur.score, 0);
+    for (const user in scoreMap) {
+        scoreMap[user].score = round(
+            scoreMap[user].records.reduce((a, b) => a + b.score, 0),
+        );
+    }
 
-        return {
-            user,
-            total: round(total),
-            ...scores,
-        };
-    });
+    const leaderboard = Object.keys(scoreMap).map((user) => ({
+        user,
+        score: scoreMap[user].score,
+        records: scoreMap[user].records,
+    }));
 
-    // Sort by total score
-    return [res.sort((a, b) => b.total - a.total), errs];
+    leaderboard.sort((a, b) => b.score - a.score);
+
+    return [leaderboard, errs];
 }
