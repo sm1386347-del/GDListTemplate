@@ -1,5 +1,7 @@
 [
-    "SampleLevel1",
-    "SAMPLELEVEL2",
+    [
+    "mein-erstes-level",
+    "mein-zweites-level"
+]
     "Sample_Level_3"
 ]
